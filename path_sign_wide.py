@@ -26,8 +26,11 @@ from PIL import Image, ImageDraw, ImageFont
 # ---------------------------------------------------------------------------
 # CONFIG -- edit these
 # ---------------------------------------------------------------------------
-WIDTH, HEIGHT = 1920, 440          # match your panel's native resolution
+WIDTH, HEIGHT = 1920, 440          # logical layout (landscape)
 FB_DEVICE = "/dev/fb0"
+# Portrait panels report fb0 as 450,1920 — rotate rendered image to fit.
+# "auto" when fb is taller than wide; or 90 / 180 / 270; 0 to disable.
+FB_ROTATE = "auto"
 
 DATA_REFRESH_SECONDS = 30          # how often to re-fetch arrival data
 PAGE_SECONDS = 5                   # how long each route stays on screen
@@ -296,9 +299,21 @@ class Framebuffer:
         bpp = int(self._read_sys("bits_per_pixel", "32"))
         return xres, yres, bpp
 
+    def _orient_for_fb(self, img):
+        if FB_ROTATE == "auto":
+            if self.xres < self.yres and img.width > img.height:
+                return img.rotate(-90, expand=True, resample=Image.Resampling.BICUBIC)
+            if self.xres > self.yres and img.height > img.width:
+                return img.rotate(90, expand=True, resample=Image.Resampling.BICUBIC)
+            return img
+        if FB_ROTATE:
+            return img.rotate(-FB_ROTATE, expand=True, resample=Image.Resampling.BICUBIC)
+        return img
+
     def show(self, img):
+        img = self._orient_for_fb(img)
         if (img.width, img.height) != (self.xres, self.yres):
-            img = img.resize((self.xres, self.yres))
+            img = img.resize((self.xres, self.yres), Image.Resampling.LANCZOS)
         if self.bpp == 32:
             b = img.tobytes("raw", "BGRX")
         elif self.bpp == 16:
